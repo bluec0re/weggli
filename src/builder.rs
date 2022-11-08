@@ -70,11 +70,55 @@ fn _build_query_tree(
         // We want to wrap queries into a function_definition so we can easily
         // extract the function that contains a match. Of course we should not do that
         // if the user specifies a function_definition as part of the query.
-        let needs_anchor = c.node().kind() == "compound_statement" && id == 0;
+        let anchor: Option<&dyn Fn(&str, &str) -> String> = match mode {
+            LanguageMode::C | LanguageMode::CPP
+                if c.node().kind() == "compound_statement" && id == 0 =>
+            {
+                Some(&|s, c| format!("(function_definition body: {}) @{}", s, c))
+            }
+            LanguageMode::Java
+                if c.node().kind() == "block"
+                    && id == 0
+                    && c.node()
+                        .child(1)
+                        .map(|c| c.kind() == "method_declaration")
+                        .unwrap_or_default() =>
+            {
+                Some(&|s, c| format!("(class_declaration body: (class_body {})) @{}", s, c))
+            }
+            LanguageMode::Java
+                if c.node().kind() == "block"
+                    && id == 0
+                    && c.node()
+                        .child(1)
+                        .map(|c| dbg!(c.kind()) != "class_declaration")
+                        .unwrap_or_default() =>
+            {
+                Some(&|s, c| {
+                    format!(
+                        "(class_declaration body: (class_body (method_declaration body: {}))) @{}",
+                        s, c
+                    )
+                })
+            }
+            _ => None,
+        };
+        let needs_anchor = anchor.is_some();
         debug!("query needs anchor: {}", needs_anchor);
 
+        // Remove the outer "block" node if we're in java and the user has provided a class_declaration
+        let mut new_cursor = if !needs_anchor
+            && id == 0
+            && matches!(mode, LanguageMode::Java)
+            && c.node().kind() == "block"
+        {
+            c.node().child(1).map(|c| c.walk())
+        } else {
+            None
+        };
+
         // The main work happens here. Iterate through the AST and create a tree-sitter query
-        let mut s = b.build(c, 0, strict_mode, kind)?;
+        let mut s = b.build(new_cursor.as_mut().unwrap_or(c), 0, strict_mode, kind)?;
 
         // Make sure user supplied function headers are displayed by adding a Capture
         if !needs_anchor {
@@ -86,13 +130,9 @@ fn _build_query_tree(
         s += &process_captures(&b.captures, 0, &mut variables);
 
         // Optionally anchor query with a function_definition
-        if needs_anchor {
+        if let Some(anchor) = anchor {
             let capture = Capture::Display;
-            format!(
-                "(function_definition body: {}) @{}",
-                s,
-                &add_capture(&mut b.captures, capture)
-            )
+            anchor(&s, &add_capture(&mut b.captures, capture))
         } else {
             "(".to_string() + &s + ")"
         }
@@ -522,16 +562,17 @@ impl QueryBuilder {
             return Ok("(_)".to_string());
         }
 
-        let mut result = if kind == "type_identifier" {
+        let mut result = if kind == "type_identifier" && !matches!(self.mode, LanguageMode::Java) {
             "[ (type_identifier) (sized_type_specifier) (primitive_type)]".to_string()
         } else if kind == "identifier" && pattern.starts_with('$') {
             if is_num_var(pattern) && parent != "declarator" {
                 "(number_literal)".to_string()
-            } else if matches!(self.mode, LanguageMode::CPP) {
-                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]"
-                    .to_string()
             } else {
-                "[(identifier) (field_expression) (field_identifier)]".to_string()
+                match self.mode {
+                    LanguageMode::CPP => "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]"                    .to_string(),
+                    LanguageMode::C => "[(identifier) (field_expression) (field_identifier)]".to_string(),
+                    LanguageMode::Java => "(identifier)".to_string(),
+                }
             }
         } else {
             format!("({})", kind)

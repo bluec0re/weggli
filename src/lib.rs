@@ -36,12 +36,14 @@ pub mod result;
 extern "C" {
     fn tree_sitter_c() -> Language;
     fn tree_sitter_cpp() -> Language;
+    fn tree_sitter_java() -> Language;
 }
 
 #[derive(Clone, Copy)]
 pub enum LanguageMode {
     C,
     CPP,
+    Java,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +64,7 @@ pub fn get_parser(mode: LanguageMode) -> Parser {
     let language = match mode {
         LanguageMode::C => unsafe { tree_sitter_c() },
         LanguageMode::CPP => unsafe { tree_sitter_cpp() },
+        LanguageMode::Java => unsafe { tree_sitter_java() },
     };
 
     let mut parser = Parser::new();
@@ -77,6 +80,7 @@ fn ts_query(sexpr: &str, mode: LanguageMode) -> Result<tree_sitter::Query, Query
     let language = match mode {
         LanguageMode::C => unsafe { tree_sitter_c() },
         LanguageMode::CPP => unsafe { tree_sitter_cpp() },
+        LanguageMode::Java => unsafe { tree_sitter_java() },
     };
 
     match Query::new(language, sexpr) {
@@ -170,6 +174,7 @@ const VALID_NODE_KINDS: &[&str] = &[
     "enum_specifier",
     "union_specifier",
     "class_specifier",
+    "block",
 ];
 
 /// Validates the user supplied search query and quits with an error message in case

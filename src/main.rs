@@ -102,6 +102,28 @@ fn main() {
                     {
                         eprintln!("{} This query is valid in C++ mode (-X)", "Note:".bold());
                     }
+                    if !matches!(args.mode, LanguageMode::Java)
+                        && parse_search_pattern(
+                            pattern,
+                            LanguageMode::Java,
+                            args.force_query,
+                            Some(regex_constraints.clone()),
+                        )
+                        .is_ok()
+                    {
+                        eprintln!("{} This query is valid in Java mode (-J)", "Note:".bold());
+                    }
+                    if !matches!(args.mode, LanguageMode::C)
+                        && parse_search_pattern(
+                            pattern,
+                            LanguageMode::C,
+                            args.force_query,
+                            Some(regex_constraints.clone()),
+                        )
+                        .is_ok()
+                    {
+                        eprintln!("{} This query is valid in C mode", "Note:".bold());
+                    }
                     std::process::exit(1);
                 }
             }

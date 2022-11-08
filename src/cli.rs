@@ -128,6 +128,13 @@ pub fn parse_arguments() -> Args {
                 .help("Enable C++ mode."),
         )
         .arg(
+            Arg::with_name("java")
+                .short("J")
+                .long("java")
+                .takes_value(false)
+                .help("Enable Java mode."),
+        )
+        .arg(
             Arg::with_name("color")
                 .short("C)")
                 .long("color")
@@ -218,14 +225,13 @@ pub fn parse_arguments() -> Args {
     let unique = matches.occurrences_of("unique") > 0;
 
     let cpp = matches.occurrences_of("cpp") > 0;
+    let java = matches.occurrences_of("java") > 0;
     let force_color = matches.occurrences_of("color") > 0;
 
     let extensions = {
         let e = helper("extensions");
         if e.is_empty() {
-            if !cpp {
-                vec!["c".to_string(), "h".into()]
-            } else {
+            if cpp {
                 vec![
                     "cc".to_string(),
                     "cpp".into(),
@@ -233,6 +239,10 @@ pub fn parse_arguments() -> Args {
                     "cxx".into(),
                     "hpp".into(),
                 ]
+            } else if java {
+                vec!["java".to_string()]
+            } else {
+                vec!["c".to_string(), "h".into()]
             }
         } else {
             e
@@ -246,6 +256,8 @@ pub fn parse_arguments() -> Args {
 
     let language = if cpp {
         LanguageMode::CPP
+    } else if java {
+        LanguageMode::Java
     } else {
         LanguageMode::C
     };

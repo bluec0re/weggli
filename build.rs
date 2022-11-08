@@ -36,4 +36,11 @@ fn main() {
         .file("third_party/grammars/weggli-cpp/src/parser.c")
         .flag("-w")
         .compile("tree-sitter-cpp-parser");
+
+    cc::Build::new()
+        .include("third_party/grammars")
+        .file("third_party/grammars/java/parser.c")
+        .flag("-std=c99")
+        .flag("-w")
+        .compile("tree-sitter-java");
 }
