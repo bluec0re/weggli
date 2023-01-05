@@ -39,6 +39,7 @@ use weggli::RegexMap;
 use weggli::parse_search_pattern;
 use weggli::query::QueryTree;
 use weggli::result::QueryResult;
+use weggli::LanguageMode;
 
 mod cli;
 
@@ -79,7 +80,7 @@ fn main() {
         .map(|pattern| {
             match parse_search_pattern(
                 pattern,
-                args.cpp,
+                args.mode,
                 args.force_query,
                 Some(regex_constraints.clone()),
             ) {
@@ -90,10 +91,10 @@ fn main() {
                 }
                 Err(qe) => {
                     eprintln!("{}", qe.message);
-                    if !args.cpp
+                    if !matches!(args.mode, LanguageMode::CPP)
                         && parse_search_pattern(
                             pattern,
-                            true,
+                            LanguageMode::CPP,
                             args.force_query,
                             Some(regex_constraints.clone()),
                         )
@@ -173,14 +174,14 @@ fn main() {
         let (results_tx, results_rx) = mpsc::channel();
 
         // avoid lifetime issues
-        let cpp = args.cpp;
+        let language = args.mode;
         let w = &work;
         let before = args.before;
         let after = args.after;
         let enable_line_numbers = args.enable_line_numbers;
 
         // Spawn worker to iterate through files, parse potential matches and forward ASTs
-        s.spawn(move |_| parse_files_worker(files, ast_tx, w, cpp));
+        s.spawn(move |_| parse_files_worker(files, ast_tx, w, language));
 
         // Run search queries on ASTs and apply CLI constraints
         // on the results. For single query executions, we can
@@ -189,7 +190,9 @@ fn main() {
         s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
 
         if w.len() > 1 {
-            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers));
+            s.spawn(move |_| {
+                multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers)
+            });
         }
     });
 }
@@ -276,7 +279,7 @@ fn parse_files_worker(
     files: Vec<PathBuf>,
     sender: Sender<(Arc<String>, Tree, String)>,
     work: &[WorkItem],
-    is_cpp: bool,
+    mode: LanguageMode,
 ) {
     let tl = ThreadLocal::new();
 
@@ -299,7 +302,7 @@ fn parse_files_worker(
                     None
                 } else {
                     let mut parser = tl
-                        .get_or(|| RefCell::new(weggli::get_parser(is_cpp)))
+                        .get_or(|| RefCell::new(weggli::get_parser(mode)))
                         .borrow_mut();
                     let tree = parser.parse(&source.as_bytes(), None).unwrap();
                     Some((tree, source.to_string()))
@@ -381,7 +384,12 @@ fn execute_queries_worker(
                                 "{}:{}\n{}",
                                 path.clone().bold(),
                                 line,
-                                m.display(&source, args.before, args.after, args.enable_line_numbers)
+                                m.display(
+                                    &source,
+                                    args.before,
+                                    args.after,
+                                    args.enable_line_numbers
+                                )
                             );
                         } else {
                             results_tx
@@ -412,7 +420,7 @@ fn multi_query_worker(
     num_queries: usize,
     before: usize,
     after: usize,
-    enable_line_numbers: bool
+    enable_line_numbers: bool,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -453,7 +461,8 @@ fn multi_query_worker(
                 "{}:{}\n{}",
                 r.path.bold(),
                 line,
-                r.result.display(&r.source, before, after, enable_line_numbers)
+                r.result
+                    .display(&r.source, before, after, enable_line_numbers)
             );
         })
     });

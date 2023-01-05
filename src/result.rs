@@ -310,11 +310,7 @@ impl<'a> DisplayHelper<'a> {
             skipped = false;
         }
 
-        let t = if skipped {
-            6
-        } else {
-            1
-        };
+        let t = if skipped { 6 } else { 1 };
 
         result.truncate(result.len() - t);
 

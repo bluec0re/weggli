@@ -16,7 +16,11 @@ limitations under the License.
 
 use clap::{App, Arg};
 use simplelog::*;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    vec,
+};
+use weggli::LanguageMode;
 
 pub struct Args {
     pub path: PathBuf,
@@ -26,13 +30,13 @@ pub struct Args {
     pub extensions: Vec<String>,
     pub regexes: Vec<String>,
     pub limit: bool,
-    pub cpp: bool,
+    pub mode: LanguageMode,
     pub unique: bool,
     pub force_color: bool,
     pub force_query: bool,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
-    pub enable_line_numbers: bool
+    pub enable_line_numbers: bool,
 }
 
 /// Parse command arguments and return them inside the Args structure.
@@ -240,6 +244,12 @@ pub fn parse_arguments() -> Args {
 
     let force_query = matches.occurrences_of("force") > 0;
 
+    let language = if cpp {
+        LanguageMode::CPP
+    } else {
+        LanguageMode::C
+    };
+
     let enable_line_numbers = matches.occurrences_of("line-numbers") > 0;
 
     Args {
@@ -250,13 +260,13 @@ pub fn parse_arguments() -> Args {
         extensions,
         regexes,
         limit,
-        cpp,
+        mode: language,
         unique,
         force_color,
         force_query,
         include,
         exclude,
-        enable_line_numbers
+        enable_line_numbers,
     }
 }
 

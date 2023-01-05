@@ -38,6 +38,12 @@ extern "C" {
     fn tree_sitter_cpp() -> Language;
 }
 
+#[derive(Clone, Copy)]
+pub enum LanguageMode {
+    C,
+    CPP,
+}
+
 #[derive(Debug, Clone)]
 pub struct QueryError {
     pub message: String,
@@ -47,19 +53,18 @@ pub struct QueryError {
 /// into a tree-sitter tree, using our own slightly modified
 /// C grammar. This function won't fail but the returned
 /// Tree might be invalid and contain errors.
-pub fn parse(source: &str, cpp: bool) -> Tree {
-    let mut parser = get_parser(cpp);
+pub fn parse(source: &str, mode: LanguageMode) -> Tree {
+    let mut parser = get_parser(mode);
     parser.parse(source, None).unwrap()
 }
 
-pub fn get_parser(cpp: bool) -> Parser {
-    let language = if !cpp {
-        unsafe { tree_sitter_c() }
-    } else {
-        unsafe { tree_sitter_cpp() }
+pub fn get_parser(mode: LanguageMode) -> Parser {
+    let language = match mode {
+        LanguageMode::C => unsafe { tree_sitter_c() },
+        LanguageMode::CPP => unsafe { tree_sitter_cpp() },
     };
 
-    let mut parser  = Parser::new();
+    let mut parser = Parser::new();
     if let Err(e) = parser.set_language(language) {
         eprintln!("{}", e);
         panic!();
@@ -68,11 +73,10 @@ pub fn get_parser(cpp: bool) -> Parser {
 }
 
 // Internal helper function to create a new tree-sitter query.
-fn ts_query(sexpr: &str, cpp: bool) -> Result<tree_sitter::Query, QueryError> {
-    let language = if !cpp {
-        unsafe { tree_sitter_c() }
-    } else {
-        unsafe { tree_sitter_cpp() }
+fn ts_query(sexpr: &str, mode: LanguageMode) -> Result<tree_sitter::Query, QueryError> {
+    let language = match mode {
+        LanguageMode::C => unsafe { tree_sitter_c() },
+        LanguageMode::CPP => unsafe { tree_sitter_cpp() },
     };
 
     match Query::new(language, sexpr) {
@@ -108,16 +112,16 @@ impl RegexMap {
 }
 
 /// Translate the search pattern in `pattern` into a weggli QueryTree.
-/// `is_cpp` enables C++ mode. `force_query` can be used to allow queries with syntax errors.
+/// `mode` enables C++ mode. `force_query` can be used to allow queries with syntax errors.
 /// We support some basic normalization (adding { } around queries) and store the normalized form
 /// in `normalized_patterns` to avoid lifetime issues.
 pub fn parse_search_pattern(
     pattern: &str,
-    is_cpp: bool,
+    mode: LanguageMode,
     force_query: bool,
     regex_constraints: Option<RegexMap>,
 ) -> Result<QueryTree, QueryError> {
-    let mut tree = parse(pattern, is_cpp);
+    let mut tree = parse(pattern, mode);
     let mut p = pattern;
 
     let temp_pattern;
@@ -126,7 +130,7 @@ pub fn parse_search_pattern(
     // weggli 'memcpy(a,b,size)' should work.
     if tree.root_node().has_error() && !pattern.ends_with(';') {
         temp_pattern = format!("{};", &p);
-        let fixed_tree = parse(&temp_pattern, is_cpp);
+        let fixed_tree = parse(&temp_pattern, mode);
         if !fixed_tree.root_node().has_error() {
             info!("normalizing query: add missing ;");
             tree = fixed_tree;
@@ -143,7 +147,7 @@ pub fn parse_search_pattern(
         if let Some(n) = c {
             if !VALID_NODE_KINDS.contains(&n.kind()) {
                 temp_pattern2 = format!("{{{}}}", &p);
-                let fixed_tree = parse(&temp_pattern2, is_cpp);
+                let fixed_tree = parse(&temp_pattern2, mode);
                 if !fixed_tree.root_node().has_error() {
                     info!("normalizing query: add {}", "{}");
                     tree = fixed_tree;
@@ -155,7 +159,7 @@ pub fn parse_search_pattern(
 
     let mut c = validate_query(&tree, p, force_query)?;
 
-    builder::build_query_tree(p, &mut c, is_cpp, regex_constraints)
+    builder::build_query_tree(p, &mut c, mode, regex_constraints)
 }
 
 /// Supported root node types.

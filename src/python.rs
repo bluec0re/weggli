@@ -42,7 +42,16 @@ struct QueryResultPy {
 #[pyfunction(cpp = "false")]
 #[pyo3(text_signature = "(query, cpp)")]
 fn parse_query(q: &str, cpp: bool) -> PyResult<QueryTreePy> {
-    let qt = parse_search_pattern(q, cpp, false, None)?;
+    let qt = parse_search_pattern(
+        q,
+        if cpp {
+            crate::LanguageMode::CPP
+        } else {
+            crate::LanguageMode::C
+        },
+        false,
+        None,
+    )?;
     Ok(QueryTreePy { qt })
 }
 
@@ -55,7 +64,14 @@ fn identifiers(p: &QueryTreePy) -> PyResult<Vec<String>> {
 #[pyfunction(cpp = "false")]
 #[pyo3(text_signature = "(p, source, cpp)")]
 fn matches(p: &QueryTreePy, source: &str, cpp: bool) -> PyResult<Vec<QueryResultPy>> {
-    let source_tree = crate::parse(source, cpp);
+    let source_tree = crate::parse(
+        source,
+        if cpp {
+            crate::LanguageMode::CPP
+        } else {
+            crate::LanguageMode::C
+        },
+    );
 
     let matches = p.qt.matches(source_tree.root_node(), source);
 
