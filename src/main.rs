@@ -196,14 +196,15 @@ fn main() {
         let (results_tx, results_rx) = mpsc::channel();
 
         // avoid lifetime issues
-        let language = args.mode;
+        let mode = args.mode;
         let w = &work;
         let before = args.before;
         let after = args.after;
         let enable_line_numbers = args.enable_line_numbers;
+        let enable_syntax_highlighting = args.enable_line_numbers;
 
         // Spawn worker to iterate through files, parse potential matches and forward ASTs
-        s.spawn(move |_| parse_files_worker(files, ast_tx, w, language));
+        s.spawn(move |_| parse_files_worker(files, ast_tx, w, mode));
 
         // Run search queries on ASTs and apply CLI constraints
         // on the results. For single query executions, we can
@@ -213,7 +214,18 @@ fn main() {
 
         if w.len() > 1 {
             s.spawn(move |_| {
-                multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers)
+                multi_query_worker(
+                    results_rx,
+                    w.len(),
+                    before,
+                    after,
+                    enable_line_numbers,
+                    if enable_syntax_highlighting {
+                        Some(mode)
+                    } else {
+                        None
+                    },
+                )
             });
         }
     });
@@ -410,7 +422,12 @@ fn execute_queries_worker(
                                     &source,
                                     args.before,
                                     args.after,
-                                    args.enable_line_numbers
+                                    args.enable_line_numbers,
+                                    if args.enable_syntax_highlighting {
+                                        Some(args.mode)
+                                    } else {
+                                        None
+                                    },
                                 )
                             );
                         } else {
@@ -443,6 +460,7 @@ fn multi_query_worker(
     before: usize,
     after: usize,
     enable_line_numbers: bool,
+    syntax_highlighting: Option<LanguageMode>,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -483,8 +501,13 @@ fn multi_query_worker(
                 "{}:{}\n{}",
                 r.path.bold(),
                 line,
-                r.result
-                    .display(&r.source, before, after, enable_line_numbers)
+                r.result.display(
+                    &r.source,
+                    before,
+                    after,
+                    enable_line_numbers,
+                    syntax_highlighting
+                )
             );
         })
     });

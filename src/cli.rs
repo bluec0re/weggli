@@ -37,6 +37,7 @@ pub struct Args {
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub enable_line_numbers: bool,
+    pub enable_syntax_highlighting: bool,
 }
 
 /// Parse command arguments and return them inside the Args structure.
@@ -177,6 +178,13 @@ pub fn parse_arguments() -> Args {
                 .takes_value(false)
                 .help("Enable line numbers"),
         )
+        .arg(
+            Arg::with_name("syntax-highlighting")
+                .long("syntax-highlighting")
+                .short("s")
+                .takes_value(false)
+                .help("Enable syntax highlighting"),
+        )
         .get_matches();
 
     let helper = |option_name| -> Vec<String> {
@@ -263,6 +271,7 @@ pub fn parse_arguments() -> Args {
     };
 
     let enable_line_numbers = matches.occurrences_of("line-numbers") > 0;
+    let enable_syntax_highlighting = matches.occurrences_of("syntax-highlighting") > 0;
 
     Args {
         path,
@@ -279,6 +288,7 @@ pub fn parse_arguments() -> Args {
         include,
         exclude,
         enable_line_numbers,
+        enable_syntax_highlighting,
     }
 }
 

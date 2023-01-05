@@ -17,6 +17,9 @@ limitations under the License.
 use colored::Colorize;
 use rustc_hash::FxHashMap;
 use std::ops::Range;
+use tree_sitter::TreeCursor;
+
+use crate::LanguageMode;
 
 /// Struct for storing (partial) query matches.
 /// We really don't want to keep track of tree-sitter AST lifetimes so
@@ -69,8 +72,9 @@ impl<'b> QueryResult {
         before: usize,
         after: usize,
         enable_line_numbers: bool,
+        syntax_highlighting: Option<LanguageMode>,
     ) -> String {
-        let mut d = DisplayHelper::new(source);
+        let mut d = DisplayHelper::new(source, syntax_highlighting);
 
         // add header
         d.add(self.function.start..self.function.start + 1);
@@ -185,21 +189,80 @@ pub fn merge_results(
         .collect()
 }
 
+struct SyntaxHighlight {
+    range: Range<usize>,
+    kind: SyntaxKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SyntaxKind {
+    Comment,
+    String,
+    Number,
+}
+
 struct DisplayHelper<'a> {
     lines: Vec<(usize, &'a str, u8)>,
     highlights: Vec<Range<usize>>,
     curr: usize,
     first: usize,
     last: usize,
+    syntax_highlights: Vec<SyntaxHighlight>,
 }
 
 impl<'a> DisplayHelper<'a> {
-    fn new(source: &'a str) -> DisplayHelper<'a> {
+    fn new(source: &'a str, syntax_highlighting: Option<LanguageMode>) -> DisplayHelper<'a> {
         let mut lines = Vec::new();
         let mut offset = 0;
         for l in source.split('\n') {
             lines.push((offset, l, 0));
             offset += l.len() + 1;
+        }
+
+        let mut syntax_highlights = vec![];
+
+        if let Some(mode) = syntax_highlighting {
+            let tree = crate::parse(source, mode);
+            let mut c = tree.walk();
+            fn walk(c: &mut TreeCursor, syntax_highlights: &mut Vec<SyntaxHighlight>) {
+                loop {
+                    let n = c.node();
+                    if ["comment", "block_comment"].contains(&n.kind()) {
+                        syntax_highlights.push(SyntaxHighlight {
+                            range: n.byte_range(),
+                            kind: SyntaxKind::Comment,
+                        });
+                    } else if ["string_literal", "char_literal"].contains(&n.kind()) {
+                        syntax_highlights.push(SyntaxHighlight {
+                            range: n.byte_range(),
+                            kind: SyntaxKind::String,
+                        });
+                    } else if [
+                        // C/C++
+                        "number_literal",
+                        // java
+                        "decimal_integer_literal",
+                        "decimal_floating_point_literal",
+                        "hex_integer_literal",
+                        "hex_floating_point_literal",
+                    ]
+                    .contains(&n.kind())
+                    {
+                        syntax_highlights.push(SyntaxHighlight {
+                            range: n.byte_range(),
+                            kind: SyntaxKind::Number,
+                        });
+                    }
+                    if c.goto_first_child() {
+                        walk(c, syntax_highlights);
+                        c.goto_parent();
+                    }
+                    if !c.goto_next_sibling() {
+                        break;
+                    }
+                }
+            }
+            walk(&mut c, &mut syntax_highlights);
         }
 
         DisplayHelper {
@@ -208,6 +271,7 @@ impl<'a> DisplayHelper<'a> {
             curr: 0,
             first: 0xFFFFFFFF,
             last: 0,
+            syntax_highlights,
         }
     }
 
@@ -231,30 +295,92 @@ impl<'a> DisplayHelper<'a> {
     }
 
     fn format(&self, start_offset: usize, l: &str, hindex: usize) -> String {
-        let highlights =
-            self.highlights.iter().skip(hindex).filter(|range| {
+        let mut highlights = self
+            .highlights
+            .iter()
+            .skip(hindex)
+            .filter(|range| range.start <= (start_offset + l.len()) && start_offset <= range.end)
+            .fuse();
+        let mut syntax_highlights = self
+            .syntax_highlights
+            .iter()
+            .filter(|SyntaxHighlight { range, .. }| {
                 range.start <= (start_offset + l.len()) && start_offset <= range.end
-            });
+            })
+            .fuse();
         let mut result = String::new();
 
         let mut current_offset = 0;
-        for h in highlights {
-            let start = if h.start > start_offset {
-                h.start - start_offset
-            } else {
-                0
-            };
+        let mut last_h = None;
+        'outer: loop {
+            let sh = syntax_highlights.next();
+            loop {
+                let h = last_h.take().or_else(|| highlights.next());
 
-            let end = if h.end < start_offset + l.len() {
-                h.end - start_offset
-            } else {
-                l.len()
-            };
+                let (kind, range) = match (sh, h) {
+                    (Some(sh), Some(h)) => {
+                        // does the syntax node start before the query result?
+                        if sh.range.start < h.start {
+                            let kind = Some(sh.kind);
+                            // postpone the query result
+                            last_h = Some(h);
+                            // does the syntax node end before the query result starts?
+                            if sh.range.end <= h.start {
+                                (kind, sh.range.clone())
+                            } else {
+                                // return subrange
+                                (kind, sh.range.start..h.start)
+                            }
+                        } else {
+                            // return query result
+                            (None, h.clone())
+                        }
+                    }
+                    (Some(sh), None) => (Some(sh.kind), sh.range.clone()),
+                    (None, Some(h)) => (None, h.clone()),
+                    // nothing left
+                    (None, None) => break 'outer,
+                };
 
-            result += &l[current_offset..start];
-            result += &format!("{}", l[start..end].red());
-            current_offset = end;
+                let start = if range.start > start_offset {
+                    range.start - start_offset
+                } else {
+                    current_offset
+                };
+
+                let end = if range.end < start_offset + l.len() {
+                    range.end - start_offset
+                } else {
+                    l.len()
+                };
+
+                if current_offset <= start {
+                    result += &l[current_offset..start];
+                    let span = &l[start..end];
+                    result += match kind {
+                        None => {
+                            let span = span.red();
+                            if self.syntax_highlights.is_empty() {
+                                span
+                            } else {
+                                span.underline()
+                            }
+                        }
+                        Some(SyntaxKind::Comment) => span.bright_black(),
+                        Some(SyntaxKind::String) => span.green().dimmed(),
+                        Some(SyntaxKind::Number) => span.blue().dimmed(),
+                    }
+                    .to_string()
+                    .as_str();
+                    current_offset = end;
+                }
+
+                if h.is_none() || last_h.is_some() {
+                    break;
+                }
+            }
         }
+
         result += &l[current_offset..l.len()];
         result += "\n";
         result
