@@ -17,6 +17,8 @@ limitations under the License.
 use std::collections::{hash_map::Keys, HashMap};
 
 use colored::Colorize;
+#[cfg(feature = "python")]
+use pyo3::pyclass;
 use query::QueryTree;
 use regex::Regex;
 use tree_sitter::{Language, Parser, Query, Tree};
@@ -43,23 +45,29 @@ pub struct QueryError {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "python", pyclass)]
+pub enum Lang {
+    C,
+    CPP,
+}
+
 /// Helper function to parse an input string
 /// into a tree-sitter tree, using our own slightly modified
 /// C grammar. This function won't fail but the returned
 /// Tree might be invalid and contain errors.
-pub fn parse(source: &str, cpp: bool) -> Tree {
-    let mut parser = get_parser(cpp);
+pub fn parse(source: &str, lang: Lang) -> Tree {
+    let mut parser = get_parser(lang);
     parser.parse(source, None).unwrap()
 }
 
-pub fn get_parser(cpp: bool) -> Parser {
-    let language = if !cpp {
-        unsafe { tree_sitter_c() }
-    } else {
-        unsafe { tree_sitter_cpp() }
+pub fn get_parser(lang: Lang) -> Parser {
+    let language = match lang {
+        Lang::C => unsafe { tree_sitter_c() },
+        Lang::CPP => unsafe { tree_sitter_cpp() },
     };
 
-    let mut parser  = Parser::new();
+    let mut parser = Parser::new();
     if let Err(e) = parser.set_language(language) {
         eprintln!("{}", e);
         panic!();
@@ -68,11 +76,10 @@ pub fn get_parser(cpp: bool) -> Parser {
 }
 
 // Internal helper function to create a new tree-sitter query.
-fn ts_query(sexpr: &str, cpp: bool) -> Result<tree_sitter::Query, QueryError> {
-    let language = if !cpp {
-        unsafe { tree_sitter_c() }
-    } else {
-        unsafe { tree_sitter_cpp() }
+fn ts_query(sexpr: &str, lang: Lang) -> Result<tree_sitter::Query, QueryError> {
+    let language = match lang {
+        Lang::C => unsafe { tree_sitter_c() },
+        Lang::CPP => unsafe { tree_sitter_cpp() },
     };
 
     match Query::new(language, sexpr) {
@@ -113,11 +120,11 @@ impl RegexMap {
 /// in `normalized_patterns` to avoid lifetime issues.
 pub fn parse_search_pattern(
     pattern: &str,
-    is_cpp: bool,
+    lang: Lang,
     force_query: bool,
     regex_constraints: Option<RegexMap>,
 ) -> Result<QueryTree, QueryError> {
-    let mut tree = parse(pattern, is_cpp);
+    let mut tree = parse(pattern, lang);
     let mut p = pattern;
 
     let temp_pattern;
@@ -126,7 +133,7 @@ pub fn parse_search_pattern(
     // weggli 'memcpy(a,b,size)' should work.
     if tree.root_node().has_error() && !pattern.ends_with(';') {
         temp_pattern = format!("{};", &p);
-        let fixed_tree = parse(&temp_pattern, is_cpp);
+        let fixed_tree = parse(&temp_pattern, lang);
         if !fixed_tree.root_node().has_error() {
             info!("normalizing query: add missing ;");
             tree = fixed_tree;
@@ -143,7 +150,7 @@ pub fn parse_search_pattern(
         if let Some(n) = c {
             if !VALID_NODE_KINDS.contains(&n.kind()) {
                 temp_pattern2 = format!("{{{}}}", &p);
-                let fixed_tree = parse(&temp_pattern2, is_cpp);
+                let fixed_tree = parse(&temp_pattern2, lang);
                 if !fixed_tree.root_node().has_error() {
                     info!("normalizing query: add {}", "{}");
                     tree = fixed_tree;
@@ -155,7 +162,7 @@ pub fn parse_search_pattern(
 
     let mut c = validate_query(&tree, p, force_query)?;
 
-    builder::build_query_tree(p, &mut c, is_cpp, regex_constraints)
+    builder::build_query_tree(p, &mut c, lang, regex_constraints)
 }
 
 /// Supported root node types.

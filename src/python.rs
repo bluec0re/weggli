@@ -21,7 +21,7 @@ use pyo3::wrap_pyfunction;
 use crate::parse_search_pattern;
 use crate::query::QueryTree;
 use crate::result::QueryResult;
-use crate::QueryError;
+use crate::{Lang, QueryError};
 
 impl std::convert::From<QueryError> for PyErr {
     fn from(err: QueryError) -> PyErr {
@@ -39,10 +39,10 @@ struct QueryResultPy {
     qr: QueryResult,
 }
 
-#[pyfunction(cpp = "false")]
-#[pyo3(text_signature = "(query, cpp)")]
-fn parse_query(q: &str, cpp: bool) -> PyResult<QueryTreePy> {
-    let qt = parse_search_pattern(q, cpp, false, None)?;
+#[pyfunction(lang = "&Lang::C")]
+#[pyo3(text_signature = "(query, lang)")]
+fn parse_query(q: &str, lang: &Lang) -> PyResult<QueryTreePy> {
+    let qt = parse_search_pattern(q, *lang, false, None)?;
     Ok(QueryTreePy { qt })
 }
 
@@ -52,10 +52,10 @@ fn identifiers(p: &QueryTreePy) -> PyResult<Vec<String>> {
     Ok(p.qt.identifiers())
 }
 
-#[pyfunction(cpp = "false")]
-#[pyo3(text_signature = "(p, source, cpp)")]
-fn matches(p: &QueryTreePy, source: &str, cpp: bool) -> PyResult<Vec<QueryResultPy>> {
-    let source_tree = crate::parse(source, cpp);
+#[pyfunction(lang = "&Lang::C")]
+#[pyo3(text_signature = "(p, source, lang)")]
+fn matches(p: &QueryTreePy, source: &str, lang: &Lang) -> PyResult<Vec<QueryResultPy>> {
+    let source_tree = crate::parse(source, *lang);
 
     let matches = p.qt.matches(source_tree.root_node(), source);
 
@@ -78,6 +78,7 @@ fn display(p: &QueryResultPy, source: &str, color: Option<bool>) -> PyResult<Str
 #[pymodule]
 fn weggli(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<QueryTreePy>()?;
+    m.add_class::<Lang>()?;
     m.add_function(wrap_pyfunction!(parse_query, m)?)?;
     m.add_function(wrap_pyfunction!(identifiers, m)?)?;
     m.add_function(wrap_pyfunction!(matches, m)?)?;

@@ -12,14 +12,13 @@ jobs:
       - name: Install latest rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.63.0
-          override: true
+          toolchain: 1.75.0
 
       - name: install python dependencies
-        run: pip3 install setuptools-rust nose
+        run: pip3 install setuptools-rust
       
       - name: install python bindings
         run: python3 setup.py install --user
 
       - name: run Tests
-        run: nosetests
+        run: python3 -munittest

@@ -3,7 +3,7 @@ from setuptools_rust import Binding, RustExtension
 
 setup(
     name="weggli",
-    version="0.2.5",
+    version="0.3.0",
     author="fwilhelm",
     url="https://github.com/weggli-rs/weggli",
     rust_extensions=[

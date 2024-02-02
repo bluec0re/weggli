@@ -1,2 +1,8 @@
 [build-system]
 requires = ["setuptools", "wheel", "setuptools-rust"]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+toxworkdir=/tmp/.tox
+"""

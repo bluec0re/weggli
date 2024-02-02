@@ -15,20 +15,20 @@ limitations under the License.
 */
 
 use simplelog::*;
-use weggli::{builder::build_query_tree, result::QueryResult};
+use weggli::{builder::build_query_tree, result::QueryResult, Lang};
 
-fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> Vec<QueryResult> {
+fn parse_and_match_helper(needle: &str, source: &str, lang: Lang) -> Vec<QueryResult> {
     let _ = SimpleLogger::init(LevelFilter::Info, Config::default());
     log::set_max_level(log::LevelFilter::Debug);
-    let tree = weggli::parse(needle, cpp);
+    let tree = weggli::parse(needle, lang);
     println!("{}", tree.root_node().to_sexp());
 
-    let source_tree = weggli::parse(source, cpp);
+    let source_tree = weggli::parse(source, lang);
 
     println!("{}", source_tree.root_node().to_sexp());
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c, cpp, None).unwrap();
+    let qt = build_query_tree(needle, &mut c, lang, None).unwrap();
 
     let matches = qt.matches(source_tree.root_node(), source);
 
@@ -39,11 +39,11 @@ fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> Vec<QueryRes
 }
 
 fn parse_and_match_cpp(needle: &str, source: &str) -> usize {
-    parse_and_match_helper(needle, source, true).len()
+    parse_and_match_helper(needle, source, Lang::CPP).len()
 }
 
 fn parse_and_match(needle: &str, source: &str) -> usize {
-    parse_and_match_helper(needle, source, false).len()
+    parse_and_match_helper(needle, source, Lang::C).len()
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn identifier_complex() {
             if (def > 1) {
                 def = 10;
             }
-            
+
         }"#;
 
     let needle = "{$x = 1; if ($x >1) {def = 10;}}";
@@ -196,10 +196,10 @@ fn exprstmt() {
 #[test]
 fn identifiers() {
     let needle = "{int x = func(bar); xonk(foo);}";
-    let tree = weggli::parse(needle, false);
+    let tree = weggli::parse(needle, Lang::C);
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c, false, None).unwrap();
+    let qt = build_query_tree(needle, &mut c, Lang::C, None).unwrap();
 
     let identifiers = qt.identifiers();
 
@@ -235,11 +235,11 @@ fn multiple_subqueries() {
             u16 size;
             u8 *data = NULL;
             int ret;
-        
+
             /* Find the extension unit. */
             found = false;
             a=b;
-        
+
             /* Find the control and perform delayed initialization if needed. */
             found = false;
             for (i = 0; i < entity->ncontrols; ++i) {
@@ -249,20 +249,20 @@ fn multiple_subqueries() {
                     break;
                 }
             }
-        
+
             if (!found) {
                 return -ENOENT;
             }
-        
+
             if (mutex_lock_interruptible(&chain->ctrl_mutex))
                 return -ERESTARTSYS;
-        
+
             ret = uvc_ctrl_init_xu_ctrl(chain->dev, ctrl);
             if (ret < 0) {
                 ret = -ENOENT;
                 goto done;
             }
-        
+
             /* Validate the required buffer size and flags for the request */
             reqflags = 0;
             size = ctrl->info.size;
@@ -335,7 +335,7 @@ fn field_expr() {
 fn casts() {
     let source = r#"
         int* foo() {
-           bla *x = (bla *) malloc(10); 
+           bla *x = (bla *) malloc(10);
         }"#;
 
     let needle = "{$x = malloc(_);}";
@@ -604,8 +604,8 @@ fn not_regression() {
     void func()
     {
         free(data); //this should not match
-        data = NULL ; 
-        
+        data = NULL ;
+
         free(handle); //this should match
     }";
 
@@ -743,7 +743,7 @@ fn test_numbers() {
         f = 0x100; // no match
         g = 0x10; // no match
         h = 010; // no match
-        i = 3.14 // no match 
+        i = 3.14 // no match
     }}";
 
     let matches = parse_and_match_cpp(needle, source);
@@ -819,7 +819,7 @@ fn subexpression_with_multiple_args() {
         quit("");
     }"#;
 
-    let results = parse_and_match_helper(needle, source, false);
+    let results = parse_and_match_helper(needle, source, Lang::C);
 
     assert_eq!(results.len(), 2);
 }

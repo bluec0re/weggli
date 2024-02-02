@@ -1,12 +1,10 @@
+import typing
 import unittest
 import weggli
-import typing
-import os
 
-
-def parse_and_match(query, code, cpp=False, color=False) -> typing.List[str]:
-    qt = weggli.parse_query(query, cpp)
-    return [weggli.display(r, code, color) for r in weggli.matches(qt, code, cpp)]
+def parse_and_match(query, code, lang=weggli.Lang.C, color=False) -> typing.List[str]:
+    qt = weggli.parse_query(query, lang)
+    return [weggli.display(r, code, color) for r in weggli.matches(qt, code, lang)]
 
 
 class TestPythonBindings(unittest.TestCase):
@@ -54,7 +52,7 @@ class TestPythonBindings(unittest.TestCase):
         }
         """
         results = parse_and_match(
-            "_ $func() {std::cout << _;}", code, cpp=True, color=False
+            "_ $func() {std::cout << _;}", code, lang=weggli.Lang.CPP, color=False
         )
         self.assertEqual(
             results,
